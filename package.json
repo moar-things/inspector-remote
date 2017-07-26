@@ -1,0 +1,36 @@
+{
+  "name": "inspector-remote",
+  "version": "0.0.1",
+  "description": "connect to a remote inspector that uses the inspector APIs",
+  "license": "MIT",
+  "author": "Patrick Mueller <pmuellr@apache.org> (https://github.com/pmuellr)",
+  "homepage": "https://github.com/pmuellr/inspector-remote",
+  "main": "inspector-remote.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pmuellr/inspector-remote.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pmuellr/inspector-remote/issues"
+  },
+  "scripts": {
+    "standard": "echo 'running standard' && standard -v",
+    "test": "npm -s run standard && npm -s run utest",
+    "utest": "node test/index.js | FORCE_COLOR=1 tap-spec",
+    "watch": "nodemon --exec 'npm -s test'"
+  },
+  "standard": {
+    "ignore": [
+      "/tmp/",
+      "/node_modules/"
+    ]
+  },
+  "dependencies": {
+  },
+  "devDependencies": {
+    "nodemon": "~1.11.0",
+    "standard": "~10.0.0",
+    "tap-spec": "~4.1.1",
+    "tape": "~4.7.0"
+  }
+}
