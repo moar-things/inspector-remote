@@ -17,7 +17,7 @@ runTest(function testBasic (t) {
     return
   }
 
-  const url = `localhost:${inspectorPort}`
+  const url = `ws://localhost:${inspectorPort}`
   const session = inspectorRemote.createSession(url)
   basicSessionTest.runTest(t, session, url)
 })

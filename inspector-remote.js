@@ -1,7 +1,14 @@
 'use strict'
 
+const URL = require('url')
 const EventEmitter = require('events')
+
+const websocket = require('websocket')
+const tinyJsonHttp = require('tiny-json-http')
+
 const pkg = require('./package.json')
+
+const WebSocketClient = websocket.client
 
 let inspector
 
@@ -35,8 +42,19 @@ class RemoteSession extends EventEmitter {
   constructor (url) {
     super()
 
+    Logger(`creating a remote session on ${url}`)
+
+    // convert url object to a string
+    if (typeof url !== 'string') {
+      if (typeof url.format !== 'function') {
+        throw new Error('url parameter should be a string or url object')
+      }
+      url = url.format()
+    }
+
     this._url = url
-    Logger('created new session')
+    this._messageID = 0
+    this._postCallbacks = {}
   }
 
   get url () {
@@ -45,22 +63,136 @@ class RemoteSession extends EventEmitter {
 
   // connect
   connect (callback) {
-    setImmediate(callback, new Error('TBD'))
+    callback = callback || function () {}
+
+    Logger(`connecting to remote session at ${this._url}`)
+    if (this._wsConnection != null) return setImmediate(callback)
+
+    getTargetURL(this._url, gotTargetURL)
+
+    const self = this
+    function gotTargetURL (err, targetURL) {
+      if (err) return callback(err)
+
+      Logger(`target url for remote session: ${targetURL}`)
+
+      const wsClient = new WebSocketClient()
+
+      wsClient.on('connect', (wsConnection) => {
+        Logger(`connected to websocket`)
+        self._wsConnection = wsConnection
+        self._setupConnection()
+        callback()
+      })
+
+      wsClient.on('connectFailed', (desc) => {
+        Logger(`not connected to websocket: ${desc}`)
+        callback(new Error(desc))
+      })
+
+      wsClient.connect(targetURL)
+    }
   }
 
   // send a request to the inspector
   post (method, params, callback) {
-    setImmediate(callback, new Error('TBD'))
+    if (this._wsConnection == null) {
+      const err = new Error('websocket closed')
+      return setImmediate(callback, err)
+    }
+
+    // fix up params / callback, if params elided
+    if (callback == null && typeof params === 'function') {
+      callback = params
+      params = null
+    }
+
+    // provide a default callback
+    callback = callback || function () {}
+
+    // build the message
+    this._messageID++
+    const message = JSON.stringify({
+      id: this._messageID,
+      method: method,
+      params: params || {}
+    })
+
+    Logger(`sending websocket message: ${message}`)
+    this._postCallbacks[this._messageID] = callback
+    this._wsConnection.send(message)
   }
 
   // close the session
   disconnect (callback) {
-    setImmediate(callback, new Error('TBD'))
+    callback = callback || function () {}
+
+    Logger(`disconnecting from remote session`)
+
+    if (this._wsConnection == null) return setImmediate(callback)
+
+    this._wsConnection.on('close', (reasonCode, description) => {
+      callback(null)
+    })
+
+    this._wsConnection.close()
+  }
+
+  _setupConnection () {
+    const wsConnection = this._wsConnection
+
+    wsConnection.on('message', (message) => {
+      // Logger(`received websocket message ${JSON.stringify(message)}`)
+      if (message.type !== 'utf8') return
+
+      try {
+        message = JSON.parse(message.utf8Data)
+      } catch (err) {
+        return
+      }
+
+      Logger(`received inspector message ${JSON.stringify(message)}`)
+
+      // event
+      if (message.method != null) {
+        this.emit('inspectorNotification', message)
+        this.emit(message.method, message)
+        return
+      }
+
+      // command response
+      if (message.id != null) {
+        const callback = this._postCallbacks[message.id]
+        delete this._postCallbacks[message.id]
+
+        if (callback == null) {
+          Logger(`response received for id ${message.id}, but not callback registered`)
+          return
+        }
+
+        callback(null, message.result)
+      }
+    })
+
+    wsConnection.on('close', (reasonCode, description) => {
+      Logger(`websocket closed: ${reasonCode} ${description}`)
+      this._wsConnection = null
+    })
+
+    wsConnection.on('error', (err) => {
+      Logger(`websocket error: ${err}`)
+    })
   }
 }
 
 // a local session
 class LocalSession extends inspector.Session {
+  constructor () {
+    super()
+
+    Logger(`creating a local session`)
+  }
+
   get url () {
     return null
   }
@@ -68,6 +200,7 @@ class LocalSession extends inspector.Session {
   connect (callback) {
     callback = onlyCallOnce(callback)
 
+    Logger(`connecting to local session`)
     try {
       super.connect()
       setImmediate(callback)
@@ -79,12 +212,40 @@ class LocalSession extends inspector.Session {
   disconnect (callback) {
     callback = onlyCallOnce(callback)
 
+    Logger(`disconnecting from local session`)
     try {
       super.disconnect()
       setImmediate(callback)
     } catch (err) {
       setImmediate(callback, err)
     }
+  }
+}
+
+// given an inspector url, get the actual target URL
+function getTargetURL (url, cb) {
+  const urlObject = URL.parse(url)
+  if (urlObject.protocol === 'ws:') urlObject.protocol = 'http:'
+  if (urlObject.protocol === 'wss:') urlObject.protocol = 'https:'
+
+  urlObject.pathname = 'json'
+  url = urlObject.format()
+
+  tinyJsonHttp.get({url: url}, gotJSON)
+
+  function gotJSON (err, result) {
+    if (err) return cb(err)
+
+    const body = result.body
+    if (body == null) return cb(new Error(`no body from url ${url}`))
+
+    const entry = body[0]
+    if (entry == null) return cb(new Error(`no entries in body from url ${url}`))
+
+    const wsURL = entry.webSocketDebuggerUrl
+    if (wsURL == null) return cb(new Error(`no webSocketDebuggerUrl in entry in body from url ${url}`))
+
+    cb(null, wsURL)
   }
 }
 
