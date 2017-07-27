@@ -44,6 +44,11 @@ if (inProcess) {
 
 const session = inspectorRemote.createSession(url)
 
+if (inProcess && session == null) {
+  console.error('unable to create in-process session - got Node 8?')
+  process.exit(1)
+}
+
 session.connect(sessionConnected)
 
 function sessionConnected (err) {

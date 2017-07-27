@@ -141,38 +141,7 @@ class RemoteSession extends EventEmitter {
   _setupConnection () {
     const wsConnection = this._wsConnection
 
-    wsConnection.on('message', (message) => {
-      // Logger(`received websocket message ${JSON.stringify(message)}`)
-      if (message.type !== 'utf8') return
-
-      try {
-        message = JSON.parse(message.utf8Data)
-      } catch (err) {
-        return
-      }
-
-      Logger(`received inspector message ${JSON.stringify(message)}`)
-
-      // event
-      if (message.method != null) {
-        this.emit('inspectorNotification', message)
-        this.emit(message.method, message)
-        return
-      }
-
-      // command response
-      if (message.id != null) {
-        const callback = this._postCallbacks[message.id]
-        delete this._postCallbacks[message.id]
-
-        if (callback == null) {
-          Logger(`response received for id ${message.id}, but not callback registered`)
-          return
-        }
-
-        callback(null, message.result)
-      }
-    })
+    wsConnection.on('message', (message) => this._handleWsMessage(message))
 
     wsConnection.on('close', (reasonCode, description) => {
       Logger(`websocket closed: ${reasonCode} ${description}`)
@@ -183,10 +152,46 @@ class RemoteSession extends EventEmitter {
       Logger(`websocket error: ${err}`)
     })
   }
+
+  _handleWsMessage (message) {
+    // Logger(`received websocket message ${JSON.stringify(message)}`)
+    if (message.type !== 'utf8') return
+
+    try {
+      message = JSON.parse(message.utf8Data)
+    } catch (err) {
+      return
+    }
+
+    Logger(`received inspector message ${JSON.stringify(message)}`)
+
+    // event
+    if (message.method != null) {
+      this.emit('inspectorNotification', message)
+      this.emit(message.method, message)
+      return
+    }
+
+    // command response
+    if (message.id != null) {
+      const callback = this._postCallbacks[message.id]
+      delete this._postCallbacks[message.id]
+
+      if (callback == null) {
+        Logger(`response received for id ${message.id}, but not callback registered`)
+        return
+      }
+
+      callback(null, message.result)
+    }
+  }
 }
 
+// inspector might not be available, gotta give it something!
+const inspectorSession = inspector ? inspector.Session : Object
+
 // a local session
-class LocalSession extends inspector.Session {
+class LocalSession extends inspectorSession {
   constructor () {
     super()
 
