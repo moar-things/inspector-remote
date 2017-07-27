@@ -10,14 +10,18 @@ other Node.js processes via the remote inspector - Node.js processes which have
 the [inspector option enabled][node 8 inspector cli options] for debugging
 out-of-process.
 
-This package provides a function which will return an object
-with the a similar interface to the
-[Node.js Inspector::session object][inspector.session], which can be used to
+This package provides a function which will return an object with the a similar
+interface to the
+[Node.js inspector Session object][inspector.session], which can be used to
 debug in-process or out-of-process.
+
+That session object implements functions and events described in the
+[Chrome DevTools Protocol Viewer][cdt-protocol-viewer].
 
 [node 8 inspector]: https://nodejs.org/dist/latest-v8.x/docs/api/inspector.html
 [node 8 inspector cli options]: https://nodejs.org/dist/latest-v8.x/docs/api/cli.html#cli_inspect_host_port
 [inspector.session]: https://nodejs.org/dist/latest-v8.x/docs/api/inspector.html#inspector_constructor_new_inspector_session
+[cdt-protocol-viewer]: https://chromedevtools.github.io/devtools-protocol/v8/
 
 
 usage
@@ -96,10 +100,12 @@ function profilerStopped (err, profile) {
 }
 ```
 
+
 install
 ================================================================================
 
     npm install pmuellr/inspector-remote
+
 
 api
 ================================================================================
