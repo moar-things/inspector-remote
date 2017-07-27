@@ -57,22 +57,29 @@ function sessionConnected (err) {
   session.post('Profiler.enable', profilerEnabled)
 }
 
-function profilerEnabled (err) {
+function profilerEnabled (err, result) {
   if (err) return console.error(`error enabling profiler: ${err}`)
+  console.error(`Profiler.enable():`, result)
+
+  session.post('Profiler.setSamplingInterval', { interval: 100 }, samplingIntervalSet)
+}
+
+function samplingIntervalSet (err, result) {
+  if (err) return console.error(`error setting sampling interval: ${err}`)
+  console.error(`Profiler.setSamplingInterval():`, result)
 
   session.post('Profiler.start', profilerStarted)
 }
 
-function profilerStarted (err) {
+function profilerStarted (err, result) {
   if (err) return console.error(`error starting profiler: ${err}`)
+  console.error(`Profiler.start():`, result)
 
   console.error('profiling for 3 seconds')
   setTimeout(stopProfiler, 3000)
 
-  if (inProcess) {
-    const start = Date.now()
-    while (Date.now() - start > 1000) {}
-  }
+  // if debugging in-process, run some demo code
+  if (inProcess) require('./profile-test-code').run(2000)
 }
 
 function stopProfiler () {
@@ -81,7 +88,9 @@ function stopProfiler () {
 
 function profilerStopped (err, profile) {
   if (err) return console.error(`error stopping profiler: ${err}`)
-  console.log(JSON.stringify(profile, null, 4))
+
+  console.error('profiling complete; writing profile to stdout')
+  console.log(JSON.stringify(profile.profile, null, 4))
 
   session.disconnect()
 }
