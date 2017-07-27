@@ -16,7 +16,7 @@
   "scripts": {
     "standard": "echo 'running standard' && standard -v",
     "test": "npm -s run standard && npm -s run utest",
-    "utest": "node test/index.js | FORCE_COLOR=1 tap-spec",
+    "utest": "INSPECTOR_PORT=9228 node --inspect=9228 test/index.js | FORCE_COLOR=1 tap-spec",
     "watch": "nodemon --exec 'npm -s test'"
   },
   "standard": {

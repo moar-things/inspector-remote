@@ -5,14 +5,15 @@ Node.js version 8.x adds a new built-in package [`inspector`][node 8 inspector],
 which provides the capability of managing and using the in-process Node.js
 inspector, for debugging.
 
-Another interesting use-case if providing an interface to deal with remote
+Another interesting use-case is providing an interface to deal with remote
 inspectors - Node.js processes which have the
 [inspector option enabled][node 8 inspector cli options] for debugging
 out-of-process.
 
 This package provides a set of functions which will return an object
-with the same interface as the
-[Node.js Inspector::session object][inspector.session].
+with the a similar interface to the
+[Node.js Inspector::session object][inspector.session], which can be used to
+debug in-process or out-of-process.
 
 [node 8 inspector]: https://nodejs.org/dist/latest-v8.x/docs/api/inspector.html
 [node 8 inspector cli options]: https://nodejs.org/dist/latest-v8.x/docs/api/cli.html#cli_inspect_host_port
@@ -32,39 +33,32 @@ install
 api
 ================================================================================
 
-This package exports the following functions:
+This package exports the following function:
 
-### `connect (url, callback)`
+### `createSession (url)`
 
-This function attempts to connect to the inspector port specified in the url,
-and will call the callback on success or error.
+This function creates either a local or remote session, depending on whether
+the `url` parameter is `null` or not.  If `null`, it creates a local session.
+If not `null`, creates a remote session.
 
 The `url` parameter can be a [`url`][url] object, or a string which will be
 parsed with [`url.parse()`][url.parse].
 
-The callback will be invoked with arguments (`err`, `session`), where
-`session` is a session object described below.
+A local session connects to the debugger available in-process.
 
+A remote session connects to an inspector socket via WebSocket.
 
-session objects
---------------------------------------------------------------------------------
+Both sessions have the same interface, which is very similar to
+[Node.js inspector Session objects][inspector.session], with the following
+differences:
 
-Session objects are intended to provide the same API as the
-[Node.js Inspector::session object][inspector.session].  The differences are
-described below.
+* a read-only `url` property is available, which has the value of the `url`
+ parameter used to create the session
 
-### event: `close`
+* the `connect()` and `disconnect()` methods take a callback parameter, and
+ will call the callback with an error parameter instead of throwing
+ exceptions directly.
 
-_(additional event not in the Node session object)_
-
-This event is emitted when the connection to the remote inspector has been
-closed.
-
-### method: `connect()`
-
-_(existing method with different semantics than the Node session object)_
-
-This method is a no-op.
 
 [url]: https://nodejs.org/dist/latest-v6.x/docs/api/url.html
 [url.parse]: https://nodejs.org/dist/latest-v6.x/docs/api/url.html#url_url_parse_urlstring_parsequerystring_slashesdenotehost
