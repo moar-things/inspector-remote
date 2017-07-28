@@ -1,6 +1,6 @@
 {
   "name": "inspector-remote",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "connect to a remote inspector that uses the inspector APIs",
   "license": "MIT",
   "author": "Patrick Mueller <pmuellr@apache.org> (https://github.com/pmuellr)",

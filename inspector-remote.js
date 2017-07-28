@@ -24,7 +24,7 @@ exports.createSession = createSession
 exports.supportsLocal = inspector != null
 
 // if env var LOGLEVEL == debug, log messages
-const Logger = process.env.LOGLEVEL === 'debug' ? log : function () {}
+const Log = process.env.LOGLEVEL === 'debug' ? log : function () {}
 
 // create a remote session if url != null, otherwise a local session
 function createSession (url) {
@@ -42,7 +42,7 @@ class RemoteSession extends EventEmitter {
   constructor (url) {
     super()
 
-    Logger(`creating a remote session on ${url}`)
+    Log(`creating a remote session on ${url}`)
 
     // convert url object to a string
     if (typeof url !== 'string') {
@@ -65,7 +65,7 @@ class RemoteSession extends EventEmitter {
   connect (callback) {
     callback = callback || function () {}
 
-    Logger(`connecting to remote session at ${this._url}`)
+    Log(`connecting to remote session at ${this._url}`)
     if (this._wsConnection != null) return setImmediate(callback)
 
     getTargetURL(this._url, gotTargetURL)
@@ -74,19 +74,19 @@ class RemoteSession extends EventEmitter {
     function gotTargetURL (err, targetURL) {
       if (err) return callback(err)
 
-      Logger(`target url for remote session: ${targetURL}`)
+      Log(`target url for remote session: ${targetURL}`)
 
       const wsClient = new WebSocketClient()
 
       wsClient.on('connect', (wsConnection) => {
-        Logger(`connected to websocket`)
+        Log(`connected to websocket`)
         self._wsConnection = wsConnection
         self._setupConnection()
         callback()
       })
 
       wsClient.on('connectFailed', (desc) => {
-        Logger(`not connected to websocket: ${desc}`)
+        Log(`not connected to websocket: ${desc}`)
         callback(new Error(desc))
       })
 
@@ -107,18 +107,15 @@ class RemoteSession extends EventEmitter {
       params = null
     }
 
-    // provide a default callback
-    callback = callback || function () {}
-
     // build the message
     this._messageID++
-    const message = JSON.stringify({
-      id: this._messageID,
-      method: method,
-      params: params || {}
-    })
+    const id = this._messageID
+    params = params || {}
+    callback = callback || function () {}
 
-    Logger(`sending websocket message: ${message}`)
+    const message = JSON.stringify({id, method, params})
+
+    Log(`sending websocket message: ${JSON.stringify({id, method})}`)
     this._postCallbacks[this._messageID] = callback
     this._wsConnection.send(message)
   }
@@ -127,7 +124,7 @@ class RemoteSession extends EventEmitter {
   disconnect (callback) {
     callback = callback || function () {}
 
-    Logger(`disconnecting from remote session`)
+    Log(`disconnecting from remote session`)
 
     if (this._wsConnection == null) return setImmediate(callback)
 
@@ -144,17 +141,16 @@ class RemoteSession extends EventEmitter {
     wsConnection.on('message', (message) => this._handleWsMessage(message))
 
     wsConnection.on('close', (reasonCode, description) => {
-      Logger(`websocket closed: ${reasonCode} ${description}`)
+      Log(`websocket closed: ${reasonCode} ${description}`)
       this._wsConnection = null
     })
 
     wsConnection.on('error', (err) => {
-      Logger(`websocket error: ${err}`)
+      Log(`websocket error: ${err}`)
     })
   }
 
   _handleWsMessage (message) {
-    // Logger(`received websocket message ${JSON.stringify(message)}`)
     if (message.type !== 'utf8') return
 
     try {
@@ -163,7 +159,7 @@ class RemoteSession extends EventEmitter {
       return
     }
 
-    Logger(`received inspector message ${JSON.stringify(message)}`)
+    Log(`received websocket message ${JSON.stringify({id: message.id, method: message.method})}`)
 
     // event
     if (message.method != null) {
@@ -178,7 +174,7 @@ class RemoteSession extends EventEmitter {
       delete this._postCallbacks[message.id]
 
       if (callback == null) {
-        Logger(`response received for id ${message.id}, but not callback registered`)
+        Log(`response received for id ${message.id}, but not callback registered`)
         return
       }
 
@@ -195,7 +191,11 @@ class LocalSession extends inspectorSession {
   constructor () {
     super()
 
-    Logger(`creating a local session`)
+    Log(`creating a local session`)
+
+    this.on('inspectorNotification', (message) => {
+      Log(`received message ${message.method}`)
+    })
   }
 
   get url () {
@@ -205,7 +205,7 @@ class LocalSession extends inspectorSession {
   connect (callback) {
     callback = onlyCallOnce(callback)
 
-    Logger(`connecting to local session`)
+    Log(`connecting to local session`)
     try {
       super.connect()
       setImmediate(callback)
@@ -217,13 +217,31 @@ class LocalSession extends inspectorSession {
   disconnect (callback) {
     callback = onlyCallOnce(callback)
 
-    Logger(`disconnecting from local session`)
+    Log(`disconnecting from local session`)
     try {
       super.disconnect()
       setImmediate(callback)
     } catch (err) {
       setImmediate(callback, err)
     }
+  }
+
+  post (method, params, callback) {
+    if (callback == null && typeof params === 'function') {
+      callback = params
+      params = {}
+    }
+
+    params = params || {}
+    callback = callback || function () {}
+
+    Log(`sending message: ${method}`)
+    return super.post(method, params, (err, message) => {
+      if (message != null) {
+        Log(`received message ${method}`)
+      }
+      callback(err, message)
+    })
   }
 }
 
