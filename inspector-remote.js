@@ -115,8 +115,13 @@ class RemoteSession extends EventEmitter {
 
     const message = JSON.stringify({id, method, params})
 
-    Log(`sending websocket message: ${JSON.stringify({id, method})}`)
-    this._postCallbacks[this._messageID] = callback
+    Log(`sending  remote request:  ${method} (${id})`)
+
+    this._postCallbacks[this._messageID] = {
+      method: method,
+      callback: callback
+    }
+
     this._wsConnection.send(message)
   }
 
@@ -159,10 +164,9 @@ class RemoteSession extends EventEmitter {
       return
     }
 
-    Log(`received websocket message ${JSON.stringify({id: message.id, method: message.method})}`)
-
     // event
     if (message.method != null) {
+      Log(`received remote event:    ${message.method}`)
       this.emit('inspectorNotification', message)
       this.emit(message.method, message)
       return
@@ -170,7 +174,9 @@ class RemoteSession extends EventEmitter {
 
     // command response
     if (message.id != null) {
-      const callback = this._postCallbacks[message.id]
+      const callback = this._postCallbacks[message.id].callback
+      const method = this._postCallbacks[message.id].method
+      Log(`received remote response: ${method} (${message.id})`)
       delete this._postCallbacks[message.id]
 
       if (callback == null) {
@@ -179,7 +185,10 @@ class RemoteSession extends EventEmitter {
       }
 
       callback(null, message.result)
+      return
     }
+
+    Log(`received remote message with no id or method: ${JSON.stringify(message)}`)
   }
 }
 
@@ -191,10 +200,12 @@ class LocalSession extends inspectorSession {
   constructor () {
     super()
 
+    this._messageID = 0
+
     Log(`creating a local session`)
 
     this.on('inspectorNotification', (message) => {
-      Log(`received message ${message.method}`)
+      Log(`received local  event:    ${message.method}`)
     })
   }
 
@@ -235,10 +246,12 @@ class LocalSession extends inspectorSession {
     params = params || {}
     callback = callback || function () {}
 
-    Log(`sending message: ${method}`)
+    this._messageID++
+    const id = this._messageID
+    Log(`sending  local  request:  ${method} (${id})`)
     return super.post(method, params, (err, message) => {
       if (message != null) {
-        Log(`received message ${method}`)
+        Log(`received local  response: ${method} (${id})`)
       }
       callback(err, message)
     })
