@@ -166,7 +166,9 @@ class RemoteSession extends EventEmitter {
 
     // event
     if (message.method != null) {
-      Log(`received remote event:    ${message.method}`)
+      if (message.method !== 'Debugger.scriptParsed') {
+        Log(`received remote event:    ${message.method}`)
+      }
       this.emit('inspectorNotification', message)
       this.emit(message.method, message)
       return
@@ -205,7 +207,9 @@ class LocalSession extends inspectorSession {
     Log(`creating a local session`)
 
     this.on('inspectorNotification', (message) => {
-      Log(`received local  event:    ${message.method}`)
+      if (message.method !== 'Debugger.scriptParsed') {
+        Log(`received local  event:    ${message.method}`)
+      }
     })
   }
 
