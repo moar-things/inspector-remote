@@ -306,5 +306,5 @@ function onlyCallOnce (fn) {
 
 // log a message
 function log (message) {
-  console.log(`${pkg.name}: ${message}`)
+  console.error(`${pkg.name}: ${message}`)
 }
