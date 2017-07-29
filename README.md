@@ -15,8 +15,8 @@ interface to the
 [Node.js inspector Session object][inspector.session], which can be used to
 debug in-process or out-of-process.
 
-That session object implements functions and events described in the
-[Chrome DevTools Protocol Viewer][cdt-protocol-viewer].
+That session object can be used to invoke methods, and listen to events,
+as described in the [Chrome DevTools Protocol Viewer][cdt-protocol-viewer].
 
 [node 8 inspector]: https://nodejs.org/dist/latest-v8.x/docs/api/inspector.html
 [node 8 inspector cli options]: https://nodejs.org/dist/latest-v8.x/docs/api/cli.html#cli_inspect_host_port
@@ -126,6 +126,9 @@ This package exports the following function:
 This function creates either a local or remote session, depending on whether
 the `url` parameter is `null` or not.  If `null`, it creates a local session.
 If not `null`, creates a remote session.
+
+If a local session is requested, but the runtime does not support local sessions,
+`null` will be returned.
 
 The `url` parameter can be a [`url`][url] object, or a string.  The
 url should use the `http:` protocol, so when running a program locally
