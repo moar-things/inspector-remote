@@ -104,7 +104,7 @@ function profilerStopped (err, profile) {
 install
 ================================================================================
 
-    npm install pmuellr/inspector-remote
+    npm install moar-things/inspector-remote
 
 
 api

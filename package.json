@@ -1,17 +1,17 @@
 {
   "name": "inspector-remote",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "connect to a remote inspector that uses the inspector APIs",
   "license": "MIT",
   "author": "Patrick Mueller <pmuellr@apache.org> (https://github.com/pmuellr)",
-  "homepage": "https://github.com/pmuellr/inspector-remote",
+  "homepage": "https://github.com/moar-things/inspector-remote",
   "main": "inspector-remote.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pmuellr/inspector-remote.git"
+    "url": "https://github.com/moar-things/inspector-remote.git"
   },
   "bugs": {
-    "url": "https://github.com/pmuellr/inspector-remote/issues"
+    "url": "https://github.com/moar-things/inspector-remote/issues"
   },
   "scripts": {
     "standard": "echo 'running standard' && standard -v",
@@ -31,7 +31,7 @@
   },
   "devDependencies": {
     "nodemon": "~1.11.0",
-    "standard": "~10.0.0",
+    "standard": "~10.0.3",
     "tap-spec": "~4.1.1",
     "tape": "~4.7.0"
   }
