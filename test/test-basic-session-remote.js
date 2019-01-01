@@ -1,6 +1,6 @@
 'use strict'
 
-const inspectorRemote = require('..')
+const inspectorRemote = require('../inspector-remote')
 
 const utils = require('./lib/utils')
 
@@ -8,7 +8,7 @@ const runTest = utils.createTestRunner(__filename)
 
 const basicSessionTest = require('./basic-session')
 
-runTest(function testBasic (t) {
+runTest(async function testBasic (t) {
   const inspectorPort = process.env.INSPECTOR_PORT
 
   if (inspectorPort == null) {
@@ -19,5 +19,5 @@ runTest(function testBasic (t) {
 
   const url = `http://localhost:${inspectorPort}`
   const session = inspectorRemote.createSession(url)
-  basicSessionTest.runTest(t, session, url)
+  await basicSessionTest.runTest(t, session, url)
 })

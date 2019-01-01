@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 'use strict'
 
 // code to run a profiler against; see ./profile.js

@@ -4,7 +4,7 @@ exports.createTestRunner = createTestRunner
 
 const path = require('path')
 
-const tape = require('tape')
+const tap = require('tap')
 
 // Create a test runner given the source file name of the test.
 // Returns a function which takes a test function, which takes a standard `t`
@@ -15,7 +15,7 @@ function createTestRunner (sourceFile) {
   return function testRunner (testFunction) {
     const testName = `${sourceFile} - ${testFunction.name}()`
 
-    tape(testName, function (t) { testFunction(t) })
+    tap.test(testName, function (t) { testFunction(t) })
   }
 }
 

@@ -2,7 +2,7 @@
 
 const pkg = require('../package.json')
 const utils = require('./lib/utils')
-const thisPackage = require('..')
+const thisPackage = require('../inspector-remote')
 
 const runTest = utils.createTestRunner(__filename)
 

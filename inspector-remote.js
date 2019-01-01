@@ -1,48 +1,132 @@
 'use strict'
 
 const URL = require('url')
+const util = require('util')
+const inspector = require('inspector')
 const EventEmitter = require('events')
 
-const websocket = require('websocket')
+const pDefer = require('p-defer')
+const WebSocket = require('ws')
 const tinyJsonHttp = require('tiny-json-http')
 
 const pkg = require('./package.json')
 
-const WebSocketClient = websocket.client
-
-let inspector
-
-try {
-  inspector = require('inspector')
-} catch (err) {
-  inspector = null
-}
-
 // the package version
 exports.version = pkg.version
 exports.createSession = createSession
-exports.supportsLocal = inspector != null
 
 // if env var LOGLEVEL == debug, log messages
 const Log = process.env.LOGLEVEL === 'debug' ? log : function () {}
 
 // create a remote session if url != null, otherwise a local session
 function createSession (url) {
-  if (url != null) return new RemoteSession(url)
+  if (url == null) return new LocalSession()
 
-  // if inspector package can't be loaded, return null
-  if (!exports.supportsLocal) return null
-
-  // return a remote session
-  return new LocalSession()
+  return new RemoteSession(url)
 }
 
-// a remote sessions
-class RemoteSession extends EventEmitter {
-  constructor (url) {
+// base session class
+class InspectorSession extends EventEmitter {
+  get url () { return null }
+  get isConnected () { throw new Error('subclass responsibility') }
+
+  async connect () { throw new Error('subclass responsibility') }
+  async disconnect () { throw new Error('subclass responsibility') }
+  async post (method, params) { throw new Error('subclass responsibility') }
+}
+
+// a local session
+class LocalSession extends InspectorSession {
+  constructor () {
     super()
 
-    Log(`creating a remote session on ${url}`)
+    Log(`creating a local session`)
+    this._isConnected = false
+    this._session = new inspector.Session()
+
+    this.addListener('newListener', (event, listener) => {
+      if (event === 'connected' || event === 'disconnected') return
+      this._session.addListener(event, listener)
+    })
+
+    this.addListener('removeListener', (event, listener) => {
+      if (event === 'connected' || event === 'disconnected') return
+      this._session.removeListener(event, listener)
+    })
+  }
+
+  get isConnected () {
+    return this._isConnected
+  }
+
+  async connect () {
+    const deferred = pDefer()
+
+    if (this.isConnected) {
+      deferred.resolve(null)
+      return deferred.promise
+    }
+
+    Log(`connecting to local session`)
+    try {
+      this._session.connect()
+    } catch (err) {
+      return deferred.reject(err)
+    }
+
+    this._isConnected = true
+    deferred.resolve(null)
+    this.emit('connected', this)
+
+    return deferred.promise
+  }
+
+  async disconnect () {
+    const deferred = pDefer()
+
+    if (!this.isConnected) {
+      deferred.resolve(null)
+      return deferred.promise
+    }
+
+    Log(`disconnecting from local session`)
+    try {
+      this._session.disconnect()
+    } catch (err) {
+      return deferred.reject(err)
+    }
+
+    this._isConnected = false
+    deferred.resolve(null)
+    this.emit('disconnected', this)
+
+    return deferred.promise
+  }
+
+  async post (method, params) {
+    params = params || {}
+    const deferred = pDefer()
+
+    if (!this.isConnected) {
+      deferred.reject(new Error('session is not connected'))
+      return deferred.promise
+    }
+
+    Log(`sending local request: ${method}`)
+    this._session.post(method, params, (err, result) => {
+      if (err != null) return deferred.reject(err)
+
+      deferred.resolve(result)
+    })
+
+    return deferred.promise
+  }
+}
+
+// a remote session
+class RemoteSession extends InspectorSession {
+  constructor (url) {
+    super()
 
     // convert url object to a string
     if (typeof url !== 'string') {
@@ -52,114 +136,123 @@ class RemoteSession extends EventEmitter {
       url = url.format()
     }
 
+    this._ws = null
     this._url = url
     this._messageID = 0
-    this._postCallbacks = {}
+    this._postResultsDeferreds = {}
   }
 
   get url () {
     return this._url
   }
 
+  get isConnected () {
+    return this._ws != null
+  }
+
   // connect
-  connect (callback) {
-    callback = callback || function () {}
+  async connect () {
+    const deferred = pDefer()
+
+    if (this.isConnected) {
+      deferred.resolve(null)
+      return deferred.promise
+    }
 
     Log(`connecting to remote session at ${this._url}`)
-    if (this._wsConnection != null) return setImmediate(callback)
+    const targetUrl = await getTargetUrl(this._url)
 
-    getTargetURL(this._url, gotTargetURL)
+    Log(`target url for remote session: ${targetUrl}`)
+    const ws = new WebSocket(targetUrl)
 
-    const self = this
-    function gotTargetURL (err, targetURL) {
-      if (err) return callback(err)
+    ws.once('open', () => {
+      Log(`connected to websocket`)
+      this._ws = ws
+      this._setupConnection()
+      deferred.resolve(null)
+      this.emit('connected', this)
+    })
 
-      Log(`target url for remote session: ${targetURL}`)
+    ws.once('error', (err) => {
+      Log(`error from websocket: ${err.message}`)
+      deferred.reject(new Error(`error from websocket: ${err.message}`))
+    })
 
-      const wsClient = new WebSocketClient()
+    return deferred.promise
+  }
 
-      wsClient.on('connect', (wsConnection) => {
-        Log(`connected to websocket`)
-        self._wsConnection = wsConnection
-        self._setupConnection()
-        callback()
-      })
+  // close the session
+  async disconnect () {
+    const deferred = pDefer()
 
-      wsClient.on('connectFailed', (desc) => {
-        Log(`not connected to websocket: ${desc}`)
-        callback(new Error(desc))
-      })
-
-      wsClient.connect(targetURL)
+    if (!this.isConnected) {
+      deferred.resolve(null)
+      return deferred.promise
     }
+
+    Log(`disconnecting from remote session`)
+    this._ws.once('close', (code, reason) => {
+      this._ws = null
+      deferred.resolve(null)
+      this.emit('disconnected', this)
+    })
+
+    this._ws.close()
+
+    return deferred.promise
   }
 
   // send a request to the inspector
-  post (method, params, callback) {
-    if (this._wsConnection == null) {
-      const err = new Error('websocket closed')
-      return setImmediate(callback, err)
-    }
+  async post (method, params) {
+    params = params || {}
+    const deferred = pDefer()
 
-    // fix up params / callback, if params elided
-    if (callback == null && typeof params === 'function') {
-      callback = params
-      params = null
+    if (!this.isConnected) {
+      deferred.reject(new Error('session is not connected'))
+      return deferred.promise
     }
 
     // build the message
     this._messageID++
     const id = this._messageID
-    params = params || {}
-    callback = callback || function () {}
 
-    const message = JSON.stringify({id, method, params})
+    const message = JSON.stringify({ id, method, params })
 
-    Log(`sending  remote request:  ${method} (${id})`)
-
-    this._postCallbacks[this._messageID] = {
-      method: method,
-      callback: callback
-    }
-
-    this._wsConnection.send(message)
-  }
-
-  // close the session
-  disconnect (callback) {
-    callback = callback || function () {}
-
-    Log(`disconnecting from remote session`)
-
-    if (this._wsConnection == null) return setImmediate(callback)
-
-    this._wsConnection.on('close', (reasonCode, description) => {
-      callback(null)
+    Log(`sending remote request: ${method} (${id})`)
+    this._postResultsDeferreds[this._messageID] = { method, deferred }
+    this._ws.send(message, (err) => {
+      if (err != null) {
+        deferred.reject(new Error(`error sending websocket message: ${err.message}`))
+      }
     })
 
-    this._wsConnection.close()
+    return deferred.promise
   }
 
   _setupConnection () {
-    const wsConnection = this._wsConnection
+    const ws = this._ws
 
-    wsConnection.on('message', (message) => this._handleWsMessage(message))
+    ws.on('message', (message) => this._handleWsMessage(message))
 
-    wsConnection.on('close', (reasonCode, description) => {
-      Log(`websocket closed: ${reasonCode} ${description}`)
-      this._wsConnection = null
+    ws.on('close', (code, reason) => {
+      Log(`websocket closed: ${code} ${reason}`)
+      this._ws = null
+      this.emit('disconnected', this)
     })
 
-    wsConnection.on('error', (err) => {
+    ws.on('error', (err) => {
       Log(`websocket error: ${err}`)
     })
   }
 
   _handleWsMessage (message) {
-    if (message.type !== 'utf8') return
+    Log(`received:`, message)
+
+    if (message == null) return
+    message = message.toString()
 
     try {
-      message = JSON.parse(message.utf8Data)
+      message = JSON.parse(message)
     } catch (err) {
       return
     }
@@ -176,94 +269,25 @@ class RemoteSession extends EventEmitter {
 
     // command response
     if (message.id != null) {
-      const callback = this._postCallbacks[message.id].callback
-      const method = this._postCallbacks[message.id].method
+      const deferred = this._postResultsDeferreds[message.id].deferred
+      const method = this._postResultsDeferreds[message.id].method
       Log(`received remote response: ${method} (${message.id})`)
-      delete this._postCallbacks[message.id]
+      delete this._postResultsDeferreds[message.id]
 
-      if (callback == null) {
+      if (deferred == null) {
         Log(`response received for id ${message.id}, but not callback registered`)
         return
       }
 
-      callback(null, message.result)
-      return
+      deferred.resolve(message.result)
     }
 
     Log(`received remote message with no id or method: ${JSON.stringify(message)}`)
   }
 }
 
-// inspector might not be available, gotta give it something!
-const inspectorSession = inspector ? inspector.Session : Object
-
-// a local session
-class LocalSession extends inspectorSession {
-  constructor () {
-    super()
-
-    this._messageID = 0
-
-    Log(`creating a local session`)
-
-    this.on('inspectorNotification', (message) => {
-      if (message.method !== 'Debugger.scriptParsed') {
-        Log(`received local  event:    ${message.method}`)
-      }
-    })
-  }
-
-  get url () {
-    return null
-  }
-
-  connect (callback) {
-    callback = onlyCallOnce(callback)
-
-    Log(`connecting to local session`)
-    try {
-      super.connect()
-      setImmediate(callback)
-    } catch (err) {
-      setImmediate(callback, err)
-    }
-  }
-
-  disconnect (callback) {
-    callback = onlyCallOnce(callback)
-
-    Log(`disconnecting from local session`)
-    try {
-      super.disconnect()
-      setImmediate(callback)
-    } catch (err) {
-      setImmediate(callback, err)
-    }
-  }
-
-  post (method, params, callback) {
-    if (callback == null && typeof params === 'function') {
-      callback = params
-      params = {}
-    }
-
-    params = params || {}
-    callback = callback || function () {}
-
-    this._messageID++
-    const id = this._messageID
-    Log(`sending  local  request:  ${method} (${id})`)
-    return super.post(method, params, (err, message) => {
-      if (message != null) {
-        Log(`received local  response: ${method} (${id})`)
-      }
-      callback(err, message)
-    })
-  }
-}
-
 // given an inspector url, get the actual target URL
-function getTargetURL (url, cb) {
+async function getTargetUrl (url) {
   const urlObject = URL.parse(url)
   if (urlObject.protocol === 'ws:') urlObject.protocol = 'http:'
   if (urlObject.protocol === 'wss:') urlObject.protocol = 'https:'
@@ -271,40 +295,26 @@ function getTargetURL (url, cb) {
   urlObject.pathname = 'json'
   url = urlObject.format()
 
-  tinyJsonHttp.get({url: url}, gotJSON)
-
-  function gotJSON (err, result) {
-    if (err) return cb(err)
-
-    const body = result.body
-    if (body == null) return cb(new Error(`no body from url ${url}`))
-
-    const entry = body[0]
-    if (entry == null) return cb(new Error(`no entries in body from url ${url}`))
-
-    const wsURL = entry.webSocketDebuggerUrl
-    if (wsURL == null) return cb(new Error(`no webSocketDebuggerUrl in entry in body from url ${url}`))
-
-    cb(null, wsURL)
+  try {
+    var result = await tinyJsonHttp.get({ url: url })
+  } catch (err) {
+    throw new Error(`error fetching inspector url: ${err.message}`)
   }
-}
 
-// return a version of the passed in function that will only be invoked once
-// if null is passed in, returns a no-op function
-function onlyCallOnce (fn) {
-  if (fn == null) return function () {}
+  const body = result.body
+  if (body == null) throw new Error(`no body from url ${url}`)
 
-  let called = false
+  const entry = body[0]
+  if (entry == null) throw new Error(`no entries in body from url ${url}`)
 
-  return function onlyCalledOnce () {
-    if (called) return
-    called = true
+  const wsURL = entry.webSocketDebuggerUrl
+  if (wsURL == null) throw new Error(`no webSocketDebuggerUrl in entry in body from url ${url}`)
 
-    return fn.apply(this, [].slice.call(arguments))
-  }
+  return wsURL
 }
 
 // log a message
-function log (message) {
+function log (...args) {
+  const message = util.format(...args)
   console.error(`${pkg.name}: ${message}`)
 }

@@ -1,6 +1,6 @@
 {
   "name": "inspector-remote",
-  "version": "1.0.7",
+  "version": "2.0.0",
   "description": "connect to a remote inspector that uses the inspector APIs",
   "license": "MIT",
   "author": "Patrick Mueller <pmuellr@apache.org> (https://github.com/pmuellr)",
@@ -14,9 +14,9 @@
     "url": "https://github.com/moar-things/inspector-remote/issues"
   },
   "scripts": {
-    "standard": "echo 'running standard' && standard -v",
-    "test": "npm -s run standard && npm -s run utest",
-    "utest": "INSPECTOR_PORT=9228 node --inspect=9228 test/index.js | FORCE_COLOR=1 tap-spec",
+    "standard": "echo 'running standard' && standard -v && echo ''",
+    "test": "npm -s run standard && test/check-deps.sh && npm -s run utest",
+    "utest": "INSPECTOR_PORT=9228 tap --node-arg=--inspect=9228 test/test-*.js",
     "watch": "nodemon --exec 'npm -s test'"
   },
   "standard": {
@@ -26,13 +26,14 @@
     ]
   },
   "dependencies": {
-    "tiny-json-http": "~5.1.1",
-    "websocket": "~1.0.24"
+    "p-defer": "^1.0.0",
+    "tiny-json-http": "~7.0.2",
+    "ws": "~6.1.2"
   },
   "devDependencies": {
-    "nodemon": "~1.11.0",
-    "standard": "~10.0.3",
-    "tap-spec": "~4.1.1",
-    "tape": "~4.7.0"
+    "dependency-check": "^3.3.0",
+    "nodemon": "~1.18.9",
+    "standard": "~12.0.1",
+    "tap": "^12.1.1"
   }
 }

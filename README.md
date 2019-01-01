@@ -1,102 +1,56 @@
-inspector-remote - connect to a remote inspector that uses the inspector APIs
+inspector-remote - local/remote inspector session connector
 ================================================================================
 
-Node.js version 8.x includes a new built-in package [`inspector`][node 8 inspector],
+Node.js version 8.x includes a new built-in package [`inspector`][node inspector],
 which provides the capability of managing and using the in-process Node.js
 inspector, for debugging your own app, while it's running.
 
 Another interesting debugging use-case is providing an interface to deal with
 other Node.js processes via the remote inspector - Node.js processes which have
-the [inspector option enabled][node 8 inspector cli options] for debugging
+the [inspector option enabled][node inspector cli options] for debugging
 out-of-process.
 
-This package provides a function which will return an object with the a similar
+This package provides a function which will return an object with a similar
 interface to the
 [Node.js inspector Session object][inspector.session], which can be used to
 debug in-process or out-of-process.
 
-That session object can be used to invoke methods, and listen to events,
+That Session object can be used to invoke methods, and listen to events,
 as described in the [Chrome DevTools Protocol Viewer][cdt-protocol-viewer].
 
-[node 8 inspector]: https://nodejs.org/dist/latest-v8.x/docs/api/inspector.html
-[node 8 inspector cli options]: https://nodejs.org/dist/latest-v8.x/docs/api/cli.html#cli_inspect_host_port
-[inspector.session]: https://nodejs.org/dist/latest-v8.x/docs/api/inspector.html#inspector_constructor_new_inspector_session
+[node inspector]: https://nodejs.org/dist/latest-v10.x/docs/api/inspector.html
+[node inspector cli options]: https://nodejs.org/dist/latest-v10.x/docs/api/cli.html#cli_inspect_host_port
+[inspector.session]: https://nodejs.org/dist/latest-v10.x/docs/api/inspector.html#inspector_constructor_new_inspector_session
 [cdt-protocol-viewer]: https://chromedevtools.github.io/devtools-protocol/v8/
 
 
-usage
+example usage
 ================================================================================
 
-The following script will generate a 3-second CPU profile from either a
-remote Node.js program by passing it's inspector URL as the parameter (eg, `http://localhost:9229`), or the program itself by passing nothing:
+The following function will will generate a 5-second CPU profile from a
+remote Node.js program by passing it's inspector URL as the parameter (eg, `http://localhost:9229`):
 
-_(this script is available in the git repo as `test/profile.js`)_
+_(a complete script using this function is available in the git repo as `test/profile.js`)_
 
 ```js
-'use strict'
+async function generateProfile (url) {
+  if (url == null) throw new Error('url parameter required')
 
-const inspectorRemote = require('inspector-remote')
+  const session = inspectorRemote.createSession(url)
 
-const url = process.argv[2]
-const inProcess = url == null
+  await session.connect()
 
-if (inProcess) {
-  console.error('debugging in-process')
-} else {
-  console.error(`debugging process at inspector port ${url}`)
-}
+  await session.post('Runtime.runIfWaitingForDebugger')
+  await session.post('Profiler.enable')
+  await session.post('Profiler.setSamplingInterval', { interval: 100 })
+  await session.post('Profiler.start')
 
-const session = inspectorRemote.createSession(url)
+  await sleep(5)
 
-if (inProcess && session == null) {
-  console.error('unable to create in-process session - got Node 8?')
-  process.exit(1)
-}
+  const profile = await session.post('Profiler.stop')
 
-session.connect(sessionConnected)
-
-function sessionConnected (err) {
-  if (err) return console.error(`unable to connect to session: ${err}`)
-
-  session.post('Profiler.enable', profilerEnabled)
-}
-
-function profilerEnabled (err, result) {
-  if (err) return console.error(`error enabling profiler: ${err}`)
-  console.error(`Profiler.enable():`, result)
-
-  session.post('Profiler.setSamplingInterval', { interval: 100 }, samplingIntervalSet)
-}
-
-function samplingIntervalSet (err, result) {
-  if (err) return console.error(`error setting sampling interval: ${err}`)
-  console.error(`Profiler.setSamplingInterval():`, result)
-
-  session.post('Profiler.start', profilerStarted)
-}
-
-function profilerStarted (err, result) {
-  if (err) return console.error(`error starting profiler: ${err}`)
-  console.error(`Profiler.start():`, result)
-
-  console.error('profiling for 3 seconds')
-  setTimeout(stopProfiler, 3000)
-
-  // if debugging in-process, run some demo code
-  if (inProcess) require('./profile-test-code').run(2000)
-}
-
-function stopProfiler () {
-  session.post('Profiler.stop', profilerStopped)
-}
-
-function profilerStopped (err, profile) {
-  if (err) return console.error(`error stopping profiler: ${err}`)
-
-  console.error('profiling complete; writing profile to stdout')
-  console.log(JSON.stringify(profile.profile, null, 4))
-
-  session.disconnect()
+  await session.disconnect()
+  console.log(JSON.stringify(profile, null, 4))
 }
 ```
 
@@ -113,11 +67,6 @@ api
 This package exports the following properties:
 
 * `version` - the version of the package
-* `supportsLocal` - a boolean which indicates whether local sessions can be
-  created
-
-Local sessions can only be created if the Node.js runtime supports the
-`inspector` package.
 
 This package exports the following function:
 
@@ -147,12 +96,19 @@ Both sessions have the same interface, which is very similar to
 differences:
 
 * a read-only `url` property is available, which has the value of the `url`
- parameter used to create the session
+  parameter used to create the session
 
-* the `connect()` and `disconnect()` methods take a callback parameter, and
- will call the callback with an error parameter instead of throwing
- exceptions directly.
+* a read-only `isConnected` property is available, which is true if the session
+  is connected, and false if it isn't
 
+* the `connect()` and `disconnect()` methods return a promise of null which is
+  resolved when complete, or rejected if an error occurs
+
+* the events `connected` and `disconnected` are available, whose only arguments
+  are the session object
+
+* the `post(method, params)` method returns a promise on the result and does
+  not take a callback
 
 [url]: https://nodejs.org/dist/latest-v6.x/docs/api/url.html
 [url.parse]: https://nodejs.org/dist/latest-v6.x/docs/api/url.html#url_url_parse_urlstring_parsequerystring_slashesdenotehost
